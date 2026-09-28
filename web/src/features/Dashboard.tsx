@@ -23,7 +23,7 @@ import { useScheduledMessages } from '../hooks/useScheduledMessages';
 import { auth } from '../lib/firebase';
 import { errorText } from '../lib/errors';
 import type { Connection, Notify } from '../lib/types';
-import { EntityDialog } from '../components/EntityDialog';
+import { ConnectionDialog } from '../components/ConnectionDialog';
 import { EmptyState } from '../components/EmptyState';
 import { Workspace } from './Workspace';
 
@@ -188,11 +188,7 @@ export function Dashboard({ user }: { user: User }) {
         )}
       </main>
       {creating && (
-        <EntityDialog
-          kind="connection"
-          notify={notify}
-          onClose={() => setCreating(false)}
-        />
+        <ConnectionDialog notify={notify} onClose={() => setCreating(false)} />
       )}
       <Snackbar
         open={Boolean(toast)}

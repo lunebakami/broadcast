@@ -20,7 +20,7 @@ import { useCollection } from '../hooks/useCollection';
 import type { Connection, Contact, Message, Notify } from '../lib/types';
 import { Contacts } from './Contacts';
 import { Messages } from './Messages';
-import { EntityDialog } from '../components/EntityDialog';
+import { ConnectionDialog } from '../components/ConnectionDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { mutate } from '../lib/firebase';
 
@@ -146,8 +146,7 @@ export function Workspace({
         />
       )}
       {editing && (
-        <EntityDialog
-          kind="connection"
+        <ConnectionDialog
           entity={connection}
           notify={notify}
           onClose={() => setEditing(false)}

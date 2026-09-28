@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import {
   Alert,
   Button,
@@ -10,42 +10,30 @@ import {
 } from '@mui/material';
 import { mutate } from '../lib/firebase';
 import { errorText } from '../lib/errors';
-import type { Connection, Contact, Notify } from '../lib/types';
+import type { Connection, Notify } from '../lib/types';
 
-export function EntityDialog({
-  kind,
+export function ConnectionDialog({
   entity,
-  connectionId,
   onClose,
   notify,
 }: {
-  kind: 'connection' | 'contact';
-  entity?: Connection | Contact;
-  connectionId?: string;
+  entity?: Connection;
   onClose: () => void;
   notify: Notify;
 }) {
   const [name, setName] = useState(entity?.name ?? '');
-  const [phone, setPhone] = useState(entity && 'phone' in entity ? entity.phone : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError('');
     try {
-      await mutate(kind === 'connection' ? 'saveConnection' : 'saveContact', {
+      await mutate('saveConnection', {
         ...(entity ? { id: entity.id } : {}),
         name,
-        ...(kind === 'contact' ? { phone, connectionId } : {}),
       });
-      notify(
-        entity
-          ? 'Alterações salvas.'
-          : kind === 'connection'
-            ? 'Conexão criada.'
-            : 'Contato criado.',
-      );
+      notify(entity ? 'Alterações salvas.' : 'Conexão criada.');
       onClose();
     } catch (reason) {
       setError(errorText(reason));
@@ -63,10 +51,7 @@ export function EntityDialog({
       maxWidth="xs"
     >
       <form onSubmit={submit}>
-        <DialogTitle>
-          {entity ? 'Editar' : kind === 'connection' ? 'Nova' : 'Novo'}{' '}
-          {kind === 'connection' ? 'conexão' : 'contato'}
-        </DialogTitle>
+        <DialogTitle>{entity ? 'Editar' : 'Nova'} conexão</DialogTitle>
         <DialogContent className="flex flex-col gap-5 !pt-3">
           {error && <Alert severity="error">{error}</Alert>}
           <TextField
@@ -78,19 +63,6 @@ export function EntityDialog({
             slotProps={{ htmlInput: { maxLength: 100 } }}
             disabled={busy}
           />
-          {kind === 'contact' && (
-            <TextField
-              label="Telefone"
-              type="tel"
-              placeholder="+55 85 99999-9999"
-              helperText="Inclua o DDD e, se necessário, o código do país."
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              slotProps={{ htmlInput: { maxLength: 25, minLength: 8 } }}
-              disabled={busy}
-            />
-          )}
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={onClose}>

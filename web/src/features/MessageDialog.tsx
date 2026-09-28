@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -15,12 +15,32 @@ import { SendOutlined } from '@mui/icons-material';
 import type { Contact, Message, Notify } from '../lib/types';
 import { mutate } from '../lib/firebase';
 import { errorText } from '../lib/errors';
+import { DEFAULT_LEAD_MS, MAX_SCHEDULE_MS } from '../lib/schedule';
 
 function localDate(date: Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
 }
+const SUBMIT_LABELS = {
+  edit: 'Salvar alterações',
+  schedule: 'Agendar',
+  send: 'Enviar agora',
+} as const;
+const NOTIFY_LABELS = {
+  edit: 'Mensagem atualizada.',
+  schedule: 'Mensagens agendadas.',
+  send: 'Envio simulado concluído.',
+} as const;
+function submitIntent(
+  message: Message | undefined,
+  scheduled: boolean,
+): keyof typeof SUBMIT_LABELS {
+  if (message) return 'edit';
+  if (scheduled) return 'schedule';
+  return 'send';
+}
+
 export function MessageDialog({
   message,
   contacts,
@@ -38,11 +58,11 @@ export function MessageDialog({
   const [text, setText] = useState(message?.text ?? '');
   const [scheduled, setScheduled] = useState(message?.status === 'scheduled');
   const [date, setDate] = useState(
-    localDate(message?.scheduledAt?.toDate() ?? new Date(Date.now() + 3600000)),
+    localDate(message?.scheduledAt?.toDate() ?? new Date(Date.now() + DEFAULT_LEAD_MS)),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError('');
@@ -51,7 +71,7 @@ export function MessageDialog({
         scheduled &&
         (!date ||
           new Date(date).getTime() <= Date.now() ||
-          new Date(date).getTime() > Date.now() + 30 * 86400000)
+          new Date(date).getTime() > Date.now() + MAX_SCHEDULE_MS)
       )
         throw new Error('Escolha um horário futuro, em até 30 dias.');
       const scheduledAt = scheduled ? new Date(date).toISOString() : null;
@@ -62,13 +82,7 @@ export function MessageDialog({
         text,
         scheduledAt,
       });
-      notify(
-        message
-          ? 'Mensagem atualizada.'
-          : scheduled
-            ? 'Mensagens agendadas.'
-            : 'Envio simulado concluído.',
-      );
+      notify(NOTIFY_LABELS[submitIntent(message, scheduled)]);
       onClose();
     } catch (reason) {
       setError(errorText(reason));
@@ -148,7 +162,7 @@ export function MessageDialog({
                     inputLabel: { shrink: true },
                     htmlInput: {
                       min: localDate(new Date()),
-                      max: localDate(new Date(Date.now() + 30 * 86400000)),
+                      max: localDate(new Date(Date.now() + MAX_SCHEDULE_MS)),
                     },
                   }}
                   helperText="Horário local do seu dispositivo. Até 30 dias de antecedência."
@@ -176,13 +190,7 @@ export function MessageDialog({
               (!message && (!selected.length || selected.length > 100))
             }
           >
-            {busy
-              ? 'Salvando…'
-              : message
-                ? 'Salvar alterações'
-                : scheduled
-                  ? 'Agendar'
-                  : 'Enviar agora'}
+            {busy ? 'Salvando…' : SUBMIT_LABELS[submitIntent(message, scheduled)]}
           </Button>
         </DialogActions>
       </form>

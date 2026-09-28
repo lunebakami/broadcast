@@ -14,14 +14,13 @@ export function useScheduledMessages(ownerId: string, notify: Notify) {
 
     function processDueMessages() {
       if (!active) return;
-      messages.forEach((message) => {
-        if (
-          !message.scheduledAt ||
-          message.scheduledAt.toMillis() > Date.now() ||
-          pending.has(message.id)
-        )
-          return;
-
+      const due = messages.filter(
+        (message) =>
+          message.scheduledAt != null &&
+          message.scheduledAt.toMillis() <= Date.now() &&
+          !pending.has(message.id),
+      );
+      due.forEach((message) => {
         pending.add(message.id);
         void completeMessageIfDue(message.id, ownerId)
           .then(() => reportedErrors.delete(message.id))

@@ -11,7 +11,7 @@ import {
 import { Add, MoreVert, Search } from '@mui/icons-material';
 import type { Contact, Notify } from '../lib/types';
 import { mutate } from '../lib/firebase';
-import { EntityDialog } from '../components/EntityDialog';
+import { ContactDialog } from '../components/ContactDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';
 
@@ -25,7 +25,8 @@ export function Contacts({
   notify: Notify;
 }) {
   const [search, setSearch] = useState('');
-  const [edit, setEdit] = useState<Contact | 'new' | null>(null);
+  // null = closed, undefined = creating.
+  const [edit, setEdit] = useState<Contact | null | undefined>(null);
   const [menu, setMenu] = useState<{
     anchor: HTMLElement;
     contact: Contact;
@@ -70,7 +71,11 @@ export function Contacts({
             htmlInput: { 'aria-label': 'Buscar contatos' },
           }}
         />
-        <Button variant="contained" startIcon={<Add />} onClick={() => setEdit('new')}>
+        <Button
+          variant="contained"
+          startIcon={<Add />}
+          onClick={() => setEdit(undefined)}
+        >
           Novo contato
         </Button>
       </div>
@@ -135,10 +140,9 @@ export function Contacts({
           Excluir contato
         </MenuItem>
       </Menu>
-      {edit && (
-        <EntityDialog
-          kind="contact"
-          entity={edit === 'new' ? undefined : edit}
+      {edit !== null && (
+        <ContactDialog
+          entity={edit}
           connectionId={connectionId}
           notify={notify}
           onClose={() => setEdit(null)}
