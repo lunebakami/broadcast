@@ -56,6 +56,32 @@ npm run deploy:free
 
 Este modo não publica as Functions. O status de mensagens agendadas só muda quando o app aberto identifica uma mensagem vencida ou quando o usuário volta a abrir o app.
 
+## Deploy automático pelo GitHub
+
+O workflow `.github/workflows/firebase.yml` valida lint, formatação e build nos PRs
+destinados à `main`. Cada push na `main`, incluindo merges de PRs, publica o frontend,
+as regras e os índices do Firestore no projeto `broadcast-68476` após essas verificações.
+Também é possível executar o workflow manualmente pela aba Actions na `main`.
+
+O deploy mantém `VITE_ENABLE_FUNCTIONS=false` e `VITE_USE_FIREBASE_EMULATORS=false`.
+As publicações são executadas uma por vez para evitar deploys simultâneos.
+
+Secrets do repositório:
+
+- `BROADCAST_WEB_ENV`: conteúdo de `web/.env.local` usado no build de produção.
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: identificador do provedor de identidade do GitHub.
+- `GCP_DEPLOY_SERVICE_ACCOUNT`: conta de serviço com permissões de deploy.
+
+A autenticação usa Workload Identity Federation com credenciais temporárias,
+restrita ao workflow na branch `main` deste repositório. PRs executam as verificações
+sem acesso aos secrets de deploy. Referência: [Google GitHub Actions Auth](https://github.com/google-github-actions/auth).
+
+Ao alterar a configuração local do Firebase, atualize o secret:
+
+```bash
+gh secret set BROADCAST_WEB_ENV --repo lunebakami/broadcast < web/.env.local
+```
+
 ## Publicar Functions e Cloud Tasks
 
 ```bash

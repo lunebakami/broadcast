@@ -10,3 +10,4 @@ web/.env.emulator
 .firebase/
 *-debug.log*
 *.tsbuildinfo
+gha-creds-*.json
