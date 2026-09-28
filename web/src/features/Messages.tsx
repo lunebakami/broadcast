@@ -16,6 +16,11 @@ import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { mutate } from '../lib/firebase';
 
+function happenedAt(message: Message) {
+  const { status, scheduledAt, sentAt, createdAt } = message;
+  return (status === 'scheduled' ? scheduledAt : sentAt) ?? createdAt;
+}
+
 export function Messages({
   messages,
   contacts,
@@ -30,7 +35,8 @@ export function Messages({
   const [status, setStatus] = useState('all');
   const [contactId, setContactId] = useState('all');
   const [search, setSearch] = useState('');
-  const [edit, setEdit] = useState<Message | 'new' | null>(null);
+  // null = closed, undefined = creating.
+  const [edit, setEdit] = useState<Message | null | undefined>(null);
   const [menu, setMenu] = useState<{
     anchor: HTMLElement;
     message: Message;
@@ -43,13 +49,9 @@ export function Messages({
         (contactId === 'all' || m.contactId === contactId) &&
         `${m.text} ${m.recipientName}`.toLowerCase().includes(search.toLowerCase()),
     )
-    .sort((a, b) => {
-      const aTime =
-        (a.status === 'scheduled' ? a.scheduledAt : a.sentAt) ?? a.createdAt;
-      const bTime =
-        (b.status === 'scheduled' ? b.scheduledAt : b.sentAt) ?? b.createdAt;
-      return (bTime?.toMillis() ?? 0) - (aTime?.toMillis() ?? 0);
-    });
+    .sort(
+      (a, b) => (happenedAt(b)?.toMillis() ?? 0) - (happenedAt(a)?.toMillis() ?? 0),
+    );
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -70,7 +72,7 @@ export function Messages({
           variant="contained"
           startIcon={<Add />}
           disabled={!contacts.length}
-          onClick={() => setEdit('new')}
+          onClick={() => setEdit(undefined)}
         >
           Nova mensagem
         </Button>
@@ -154,9 +156,7 @@ export function Messages({
                 {message.status === 'scheduled'
                   ? 'Agendada para '
                   : 'Envio simulado em '}
-                {(message.status === 'scheduled' ? message.scheduledAt : message.sentAt)
-                  ?.toDate()
-                  .toLocaleString('pt-BR') ?? '—'}
+                {happenedAt(message)?.toDate().toLocaleString('pt-BR') ?? '—'}
               </p>
             </article>
           ))}
@@ -189,9 +189,9 @@ export function Messages({
           Excluir mensagem
         </MenuItem>
       </Menu>
-      {edit && (
+      {edit !== null && (
         <MessageDialog
-          message={edit === 'new' ? undefined : edit}
+          message={edit}
           contacts={contacts}
           connectionId={connectionId}
           notify={notify}

@@ -25,7 +25,8 @@ export function Contacts({
   notify: Notify;
 }) {
   const [search, setSearch] = useState('');
-  const [edit, setEdit] = useState<Contact | 'new' | null>(null);
+  // null = closed, undefined = creating.
+  const [edit, setEdit] = useState<Contact | null | undefined>(null);
   const [menu, setMenu] = useState<{
     anchor: HTMLElement;
     contact: Contact;
@@ -70,7 +71,11 @@ export function Contacts({
             htmlInput: { 'aria-label': 'Buscar contatos' },
           }}
         />
-        <Button variant="contained" startIcon={<Add />} onClick={() => setEdit('new')}>
+        <Button
+          variant="contained"
+          startIcon={<Add />}
+          onClick={() => setEdit(undefined)}
+        >
           Novo contato
         </Button>
       </div>
@@ -135,9 +140,9 @@ export function Contacts({
           Excluir contato
         </MenuItem>
       </Menu>
-      {edit && (
+      {edit !== null && (
         <ContactDialog
-          entity={edit === 'new' ? undefined : edit}
+          entity={edit}
           connectionId={connectionId}
           notify={notify}
           onClose={() => setEdit(null)}
