@@ -5,6 +5,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Pagination,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -15,6 +16,8 @@ import { MessageDialog } from './MessageDialog';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { mutate } from '../lib/firebase';
+
+const PAGE_SIZE = 10;
 
 function happenedAt(message: Message) {
   const { status, scheduledAt, sentAt, createdAt } = message;
@@ -35,6 +38,7 @@ export function Messages({
   const [status, setStatus] = useState('all');
   const [contactId, setContactId] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   // null = closed, undefined = creating.
   const [edit, setEdit] = useState<Message | null | undefined>(null);
   const [menu, setMenu] = useState<{
@@ -57,6 +61,12 @@ export function Messages({
     .sort(
       (a, b) => (happenedAt(b)?.toMillis() ?? 0) - (happenedAt(a)?.toMillis() ?? 0),
     );
+  const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(pageCount, 1));
+  const visibleMessages = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -65,7 +75,10 @@ export function Messages({
           size="small"
           value={status}
           onChange={(_, value: string | null) => {
-            if (value) setStatus(value);
+            if (value) {
+              setStatus(value);
+              setPage(1);
+            }
           }}
           aria-label="Status das mensagens"
         >
@@ -87,14 +100,20 @@ export function Messages({
           size="small"
           label="Buscar mensagem ou contato"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
         />
         <TextField
           select
           size="small"
           label="Contato"
           value={contactId}
-          onChange={(e) => setContactId(e.target.value)}
+          onChange={(e) => {
+            setContactId(e.target.value);
+            setPage(1);
+          }}
           className="min-w-48"
         >
           <MenuItem value="all">Todos os contatos</MenuItem>
@@ -125,7 +144,7 @@ export function Messages({
         />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          {filtered.map((message) => (
+          {visibleMessages.map((message) => (
             <article
               key={message.id}
               className="rounded-2xl border border-slate-200 bg-white p-5"
@@ -165,6 +184,23 @@ export function Messages({
               </p>
             </article>
           ))}
+        </div>
+      )}
+      {pageCount > 1 && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <Pagination
+            count={pageCount}
+            page={currentPage}
+            onChange={(_, value) => setPage(value)}
+            showFirstButton
+            showLastButton
+            aria-label="Paginação de mensagens"
+          />
+          <p className="text-xs text-slate-500">
+            Mostrando {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filtered.length)} de {filtered.length}{' '}
+            mensagens
+          </p>
         </div>
       )}
       <Menu anchorEl={menu?.anchor} open={Boolean(menu)} onClose={() => setMenu(null)}>
