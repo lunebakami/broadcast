@@ -77,29 +77,6 @@ function required<T>(value: T | undefined, field: string) {
   return value;
 }
 
-async function syncMessageRecipientNames(
-  ownerId: string,
-  contactId: string,
-  recipientName: string,
-) {
-  const relatedMessages = await getDocs(
-    query(
-      collection(db!, 'messages'),
-      where('ownerId', '==', ownerId),
-      where('contactId', '==', contactId),
-    ),
-  );
-
-  for (let offset = 0; offset < relatedMessages.size; offset += 450) {
-    const batch = writeBatch(db!);
-    relatedMessages.docs
-      .slice(offset, offset + 450)
-      .forEach((message) => batch.update(message.ref, { recipientName }));
-    // eslint-disable-next-line no-await-in-loop
-    await batch.commit();
-  }
-}
-
 function checkScheduleWindow(scheduledAt: Date | null) {
   if (scheduledAt && scheduledAt.getTime() > Date.now() + MAX_SCHEDULE_MS)
     throw new Error('Agende para o futuro, em até 30 dias.');
@@ -209,21 +186,18 @@ export async function mutate(action: MutateAction, input: unknown) {
       const parentId = required(connectionId, 'connectionId');
       const parent = doc(connections, parentId);
       const ref = id ? doc(contacts, id) : doc(contacts);
-      const nextName = required(name, 'name').trim();
-      let previousName: string | undefined;
       await runTransaction(db, async (transaction) => {
         owned((await transaction.get(parent)).data());
         if (id) {
           const existing = owned((await transaction.get(ref)).data());
           if (existing.connectionId !== parentId) throw new Error('Conexão inválida.');
-          previousName = String(existing.name);
         }
         transaction.set(
           ref,
           {
             ownerId,
             connectionId: parentId,
-            name: nextName,
+            name: required(name, 'name').trim(),
             phone: required(phone, 'phone').trim(),
             updatedAt: now,
             ...(id ? {} : { createdAt: now }),
@@ -232,8 +206,6 @@ export async function mutate(action: MutateAction, input: unknown) {
         );
         transaction.update(parent, { updatedAt: now });
       });
-      if (id && previousName !== nextName)
-        await syncMessageRecipientNames(ownerId, id, nextName);
     },
 
     deleteContact: removeContact(true),
