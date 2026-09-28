@@ -13,7 +13,7 @@ import {
 } from '@mui/material';
 import { SendOutlined } from '@mui/icons-material';
 import type { Contact, Message, Notify } from '../lib/types';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 import { errorText } from '../lib/errors';
 import { DEFAULT_LEAD_MS, MAX_SCHEDULE_MS } from '../lib/schedule';
 

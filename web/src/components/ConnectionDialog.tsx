@@ -8,7 +8,7 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 import { errorText } from '../lib/errors';
 import type { Connection, Notify } from '../lib/types';
 

@@ -17,12 +17,13 @@ import {
   Schedule,
 } from '@mui/icons-material';
 import { useCollection } from '../hooks/useCollection';
-import type { Connection, Contact, Message, Notify } from '../lib/types';
+import { useMessageCounts } from '../hooks/useMessageCounts';
+import type { Connection, Contact, Notify } from '../lib/types';
 import { Contacts } from './Contacts';
 import { Messages } from './Messages';
 import { ConnectionDialog } from '../components/ConnectionDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 
 export function Workspace({
   connection,
@@ -36,7 +37,7 @@ export function Workspace({
   notify: Notify;
 }) {
   const contacts = useCollection<Contact>('contacts', ownerId, connection.id);
-  const messages = useCollection<Message>('messages', ownerId, connection.id);
+  const messageCounts = useMessageCounts(ownerId, connection.id);
   const [tab, setTab] = useState('messages');
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
@@ -49,12 +50,12 @@ export function Workspace({
     },
     {
       label: 'Enviadas',
-      count: messages.items.filter((m) => m.status === 'sent').length,
+      count: messageCounts.sent,
       icon: <ForumOutlined />,
     },
     {
       label: 'Agendadas',
-      count: messages.items.filter((m) => m.status === 'scheduled').length,
+      count: messageCounts.scheduled,
       icon: <Schedule />,
     },
   ];
@@ -114,9 +115,9 @@ export function Workspace({
           </div>
         ))}
       </div>
-      {(contacts.error || messages.error) && (
+      {(contacts.error || messageCounts.error) && (
         <Alert severity="error" className="mb-5">
-          {contacts.error || messages.error}
+          {contacts.error || messageCounts.error}
         </Alert>
       )}
       <Tabs
@@ -127,7 +128,7 @@ export function Workspace({
         <Tab value="messages" label="Mensagens" />
         <Tab value="contacts" label="Contatos" />
       </Tabs>
-      {contacts.loading || messages.loading ? (
+      {contacts.loading ? (
         <div className="py-20 text-center">
           <CircularProgress aria-label="Carregando dados" />
         </div>
@@ -139,7 +140,7 @@ export function Workspace({
         />
       ) : (
         <Messages
-          messages={messages.items}
+          ownerId={ownerId}
           contacts={contacts.items}
           connectionId={connection.id}
           notify={notify}

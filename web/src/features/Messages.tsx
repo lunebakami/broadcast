@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
+  Alert,
   Button,
   Chip,
+  CircularProgress,
   IconButton,
   Menu,
   MenuItem,
@@ -10,11 +12,12 @@ import {
   ToggleButtonGroup,
 } from '@mui/material';
 import { Add, MoreVert, Schedule, DoneAll } from '@mui/icons-material';
+import { mutate } from '../lib/mutations';
+import { useMessagePage } from '../hooks/useMessagePage';
 import type { Contact, Message, Notify } from '../lib/types';
-import { MessageDialog } from './MessageDialog';
-import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
-import { mutate } from '../lib/firebase';
+import { EmptyState } from '../components/EmptyState';
+import { MessageDialog } from './MessageDialog';
 
 function happenedAt(message: Message) {
   const { status, scheduledAt, sentAt, createdAt } = message;
@@ -22,12 +25,12 @@ function happenedAt(message: Message) {
 }
 
 export function Messages({
-  messages,
+  ownerId,
   contacts,
   connectionId,
   notify,
 }: {
-  messages: Message[];
+  ownerId: string;
   contacts: Contact[];
   connectionId: string;
   notify: Notify;
@@ -35,6 +38,19 @@ export function Messages({
   const [status, setStatus] = useState('all');
   const [contactId, setContactId] = useState('all');
   const [search, setSearch] = useState('');
+  const {
+    messages,
+    totalCount,
+    loading,
+    error,
+    page,
+    pageCount,
+    hasPreviousPage,
+    hasNextPage,
+    previousPage,
+    nextPage,
+    resetPage,
+  } = useMessagePage(ownerId, connectionId, status, contactId);
   // null = closed, undefined = creating.
   const [edit, setEdit] = useState<Message | null | undefined>(null);
   const [menu, setMenu] = useState<{
@@ -42,16 +58,17 @@ export function Messages({
     message: Message;
   } | null>(null);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
-  const filtered = messages
-    .filter(
-      (m) =>
-        (status === 'all' || m.status === status) &&
-        (contactId === 'all' || m.contactId === contactId) &&
-        `${m.text} ${m.recipientName}`.toLowerCase().includes(search.toLowerCase()),
-    )
-    .sort(
-      (a, b) => (happenedAt(b)?.toMillis() ?? 0) - (happenedAt(a)?.toMillis() ?? 0),
-    );
+  const contactNames = new Map(contacts.map((contact) => [contact.id, contact.name]));
+  const currentMessages = messages.map((message) => ({
+    ...message,
+    recipientName: contactNames.get(message.contactId) ?? message.recipientName,
+  }));
+  const filtered = currentMessages.filter(
+    (m) =>
+      (status === 'all' || m.status === status) &&
+      (contactId === 'all' || m.contactId === contactId) &&
+      `${m.text} ${m.recipientName}`.toLowerCase().includes(search.toLowerCase()),
+  );
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -60,7 +77,10 @@ export function Messages({
           size="small"
           value={status}
           onChange={(_, value: string | null) => {
-            if (value) setStatus(value);
+            if (value) {
+              setStatus(value);
+              resetPage();
+            }
           }}
           aria-label="Status das mensagens"
         >
@@ -80,16 +100,21 @@ export function Messages({
       <div className="mb-6 flex flex-wrap gap-3">
         <TextField
           size="small"
-          label="Buscar mensagem ou contato"
+          label="Buscar nesta página"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+          }}
         />
         <TextField
           select
           size="small"
           label="Contato"
           value={contactId}
-          onChange={(e) => setContactId(e.target.value)}
+          onChange={(e) => {
+            setContactId(e.target.value);
+            resetPage();
+          }}
           className="min-w-48"
         >
           <MenuItem value="all">Todos os contatos</MenuItem>
@@ -105,15 +130,22 @@ export function Messages({
           Adicione um contato na aba Contatos para criar uma mensagem.
         </p>
       )}
-      {filtered.length === 0 ? (
+      {error && (
+        <Alert severity="error" className="mb-5">
+          {error}
+        </Alert>
+      )}
+      {loading ? (
+        <div className="py-16 text-center">
+          <CircularProgress aria-label="Carregando mensagens" />
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           title={
-            messages.length
-              ? 'Nenhuma mensagem encontrada'
-              : 'Espaço para novas conversas'
+            totalCount ? 'Nenhuma mensagem encontrada' : 'Espaço para novas conversas'
           }
           description={
-            messages.length
+            totalCount
               ? 'Ajuste os filtros para encontrar suas mensagens.'
               : 'Crie uma mensagem e escolha entre enviar agora ou agendar para depois.'
           }
@@ -160,6 +192,22 @@ export function Messages({
               </p>
             </article>
           ))}
+        </div>
+      )}
+      {pageCount > 0 && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <div className="flex items-center gap-3">
+            <Button disabled={!hasPreviousPage || loading} onClick={previousPage}>
+              Anterior
+            </Button>
+            <span className="text-sm text-slate-500">
+              Página {page} de {pageCount}
+            </span>
+            <Button disabled={!hasNextPage || loading} onClick={nextPage}>
+              Próxima
+            </Button>
+          </div>
+          <p className="text-xs text-slate-500">{totalCount} mensagens no filtro</p>
         </div>
       )}
       <Menu anchorEl={menu?.anchor} open={Boolean(menu)} onClose={() => setMenu(null)}>
