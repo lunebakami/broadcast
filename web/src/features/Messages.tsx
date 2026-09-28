@@ -46,12 +46,7 @@ export function Messages({
     message: Message;
   } | null>(null);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
-  const contactNames = new Map(contacts.map((contact) => [contact.id, contact.name]));
-  const currentMessages = messages.map((message) => ({
-    ...message,
-    recipientName: contactNames.get(message.contactId) ?? message.recipientName,
-  }));
-  const filtered = currentMessages
+  const filtered = messages
     .filter(
       (m) =>
         (status === 'all' || m.status === status) &&

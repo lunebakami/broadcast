@@ -105,33 +105,42 @@ service cloud.firestore {
 
       allow update: if signedIn()
         && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.connectionId == resource.data.connectionId
-        && request.resource.data.contactId == resource.data.contactId
-        && request.resource.data.recipientName == resource.data.recipientName
-        && request.resource.data.recipientPhone == resource.data.recipientPhone
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'text', 'status', 'scheduledAt', 'sentAt', 'revision', 'updatedAt'
-        ])
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 5000
-        && request.resource.data.revision is string
-        && request.resource.data.updatedAt == request.time
         && (
-          (resource.data.status == 'scheduled'
-            && request.resource.data.status == 'scheduled'
-            && validSchedule(request.resource.data.scheduledAt)
-            && request.resource.data.sentAt == null)
-          || (resource.data.status == 'scheduled'
-            && request.resource.data.status == 'sent'
-            // The owner may also explicitly send a scheduled message early.
-            && request.resource.data.scheduledAt == null
-            && request.resource.data.sentAt == request.time)
-          || (resource.data.status == 'sent'
-            && request.resource.data.status == 'sent'
-            && request.resource.data.scheduledAt == null
-            && request.resource.data.sentAt == resource.data.sentAt)
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['recipientName'])
+            && get(/databases/$(database)/documents/contacts/$(resource.data.contactId)).data.ownerId == request.auth.uid
+            && validName(request.resource.data.recipientName)
+            && request.resource.data.recipientName == get(/databases/$(database)/documents/contacts/$(resource.data.contactId)).data.name
+          )
+          || (
+            request.resource.data.ownerId == resource.data.ownerId
+            && request.resource.data.connectionId == resource.data.connectionId
+            && request.resource.data.contactId == resource.data.contactId
+            && request.resource.data.recipientName == resource.data.recipientName
+            && request.resource.data.recipientPhone == resource.data.recipientPhone
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'text', 'status', 'scheduledAt', 'sentAt', 'revision', 'updatedAt'
+            ])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 5000
+            && request.resource.data.revision is string
+            && request.resource.data.updatedAt == request.time
+            && (
+              (resource.data.status == 'scheduled'
+                && request.resource.data.status == 'scheduled'
+                && validSchedule(request.resource.data.scheduledAt)
+                && request.resource.data.sentAt == null)
+              || (resource.data.status == 'scheduled'
+                && request.resource.data.status == 'sent'
+                && request.resource.data.scheduledAt == null
+                && request.resource.data.sentAt == request.time)
+              || (resource.data.status == 'sent'
+                && request.resource.data.status == 'sent'
+                && request.resource.data.scheduledAt == null
+                && request.resource.data.sentAt == resource.data.sentAt)
+            )
+          )
         );
 
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;

@@ -37,6 +37,27 @@ function owned(snapshot: DocumentSnapshot, ownerId: string) {
   return snapshot.data()!;
 }
 
+async function syncMessageRecipientNames(
+  ownerId: string,
+  contactId: string,
+  recipientName: string,
+) {
+  const messages = await db
+    .collection('messages')
+    .where('ownerId', '==', ownerId)
+    .where('contactId', '==', contactId)
+    .get();
+
+  for (let offset = 0; offset < messages.size; offset += 450) {
+    const batch = db.batch();
+    messages.docs
+      .slice(offset, offset + 450)
+      .forEach((message) => batch.update(message.ref, { recipientName }));
+    // eslint-disable-next-line no-await-in-loop
+    await batch.commit();
+  }
+}
+
 export const mutate = onCall(async (request) => {
   const ownerId = request.auth?.uid;
   if (!ownerId) throw new HttpsError('unauthenticated', 'Entre para continuar.');
@@ -157,13 +178,15 @@ export const mutate = onCall(async (request) => {
         const ref = data.id
           ? db.collection('contacts').doc(data.id)
           : db.collection('contacts').doc();
+        let previousName: string | undefined;
         await db.runTransaction(async (tx) => {
           owned(await tx.get(parent), ownerId);
-          if (
-            data.id &&
-            owned(await tx.get(ref), ownerId).connectionId !== data.connectionId
-          )
-            throw new HttpsError('invalid-argument', 'Conexão inválida.');
+          if (data.id) {
+            const existing = owned(await tx.get(ref), ownerId);
+            if (existing.connectionId !== data.connectionId)
+              throw new HttpsError('invalid-argument', 'Conexão inválida.');
+            previousName = String(existing.name);
+          }
           tx.set(
             ref,
             {
@@ -178,6 +201,8 @@ export const mutate = onCall(async (request) => {
           );
           tx.update(parent, { updatedAt: now });
         });
+        if (data.id && previousName !== data.name)
+          await syncMessageRecipientNames(ownerId, data.id, data.name);
         return { id: ref.id };
       },
 
