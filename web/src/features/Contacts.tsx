@@ -11,7 +11,7 @@ import {
 import { Add, MoreVert, Search } from '@mui/icons-material';
 import type { Contact, Notify } from '../lib/types';
 import { mutate } from '../lib/firebase';
-import { EntityDialog } from '../components/EntityDialog';
+import { ContactDialog } from '../components/ContactDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';
 
@@ -136,8 +136,7 @@ export function Contacts({
         </MenuItem>
       </Menu>
       {edit && (
-        <EntityDialog
-          kind="contact"
+        <ContactDialog
           entity={edit === 'new' ? undefined : edit}
           connectionId={connectionId}
           notify={notify}

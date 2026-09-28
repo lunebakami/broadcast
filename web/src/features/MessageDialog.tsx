@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -42,7 +42,7 @@ export function MessageDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError('');
