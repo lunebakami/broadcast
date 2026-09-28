@@ -1,0 +1,12 @@
+node_modules/
+web/dist/
+functions/lib/
+.env
+.env.*
+!.env.example
+!web/.env.emulator.example
+web/.env.local
+web/.env.emulator
+.firebase/
+*-debug.log*
+*.tsbuildinfo

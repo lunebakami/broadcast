@@ -1,0 +1,17 @@
+@layer theme, base, mui, components, utilities;
+@import 'tailwindcss';
+@layer base {
+  body {
+    margin: 0;
+    min-width: 320px;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+  ::selection {
+    background: #b7e7d6;
+    color: #123e35;
+  }
+}

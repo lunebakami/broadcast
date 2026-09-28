@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsConnection(connectionId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/connections/$(connectionId)).data.ownerId == request.auth.uid;
+    }
+
+    function validName(name) {
+      return name is string && name.size() > 0 && name.size() <= 100;
+    }
+
+    function validPhone(phone) {
+      return phone is string
+        && phone.size() <= 25
+        && phone.matches('^\\+?([0-9][ ()-]?){8,15}$');
+    }
+
+    function validSchedule(scheduledAt) {
+      return scheduledAt is timestamp
+        && scheduledAt > request.time
+        && scheduledAt <= request.time + duration.value(30, 'd');
+    }
+
+    match /connections/{connectionId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'name', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && validName(request.resource.data.name)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
+        && validName(request.resource.data.name)
+        && request.resource.data.updatedAt == request.time;
+
+      // Cloud Firestore rules cannot query a collection to prove it has no messages.
+      // The client checks that constraint before deleting the connection.
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /contacts/{contactId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'connectionId', 'name', 'phone', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && ownsConnection(request.resource.data.connectionId)
+        && validName(request.resource.data.name)
+        && validPhone(request.resource.data.phone)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.connectionId == resource.data.connectionId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'updatedAt'])
+        && validName(request.resource.data.name)
+        && validPhone(request.resource.data.phone)
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && ownsConnection(resource.data.connectionId);
+    }
+
+    match /messages/{messageId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'ownerId', 'connectionId', 'contactId', 'recipientName', 'recipientPhone',
+          'text', 'status', 'scheduledAt', 'sentAt', 'revision', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.ownerId == request.auth.uid
+        && ownsConnection(request.resource.data.connectionId)
+        && get(/databases/$(database)/documents/contacts/$(request.resource.data.contactId)).data.ownerId == request.auth.uid
+        && get(/databases/$(database)/documents/contacts/$(request.resource.data.contactId)).data.connectionId == request.resource.data.connectionId
+        && validName(request.resource.data.recipientName)
+        && validPhone(request.resource.data.recipientPhone)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 5000
+        && request.resource.data.revision is string
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && (
+          (request.resource.data.status == 'sent'
+            && request.resource.data.scheduledAt == null
+            && request.resource.data.sentAt == request.time)
+          || (request.resource.data.status == 'scheduled'
+            && validSchedule(request.resource.data.scheduledAt)
+            && request.resource.data.sentAt == null)
+        );
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.connectionId == resource.data.connectionId
+        && request.resource.data.contactId == resource.data.contactId
+        && request.resource.data.recipientName == resource.data.recipientName
+        && request.resource.data.recipientPhone == resource.data.recipientPhone
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'text', 'status', 'scheduledAt', 'sentAt', 'revision', 'updatedAt'
+        ])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 5000
+        && request.resource.data.revision is string
+        && request.resource.data.updatedAt == request.time
+        && (
+          (resource.data.status == 'scheduled'
+            && request.resource.data.status == 'scheduled'
+            && validSchedule(request.resource.data.scheduledAt)
+            && request.resource.data.sentAt == null)
+          || (resource.data.status == 'scheduled'
+            && request.resource.data.status == 'sent'
+            // The owner may also explicitly send a scheduled message early.
+            && request.resource.data.scheduledAt == null
+            && request.resource.data.sentAt == request.time)
+          || (resource.data.status == 'sent'
+            && request.resource.data.status == 'sent'
+            && request.resource.data.scheduledAt == null
+            && request.resource.data.sentAt == resource.data.sentAt)
+        );
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
