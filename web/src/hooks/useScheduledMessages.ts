@@ -1,62 +1,66 @@
 import { useEffect } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  Timestamp,
+  where,
+} from 'firebase/firestore';
 import { completeMessageIfDue, db, functionsEnabled } from '../lib/firebase';
-import type { Message, Notify } from '../lib/types';
+import type { Notify } from '../lib/types';
+
+const CHECK_INTERVAL_MS = 10000;
+const BATCH_SIZE = 10;
 
 export function useScheduledMessages(ownerId: string, notify: Notify) {
   useEffect(() => {
     if (functionsEnabled || !db) return;
 
     let active = true;
-    let messages: Message[] = [];
-    const pending = new Set<string>();
-    const reportedErrors = new Set<string>();
+    let checking = false;
 
-    function processDueMessages() {
-      if (!active) return;
-      const due = messages.filter(
-        (message) =>
-          message.scheduledAt != null &&
-          message.scheduledAt.toMillis() <= Date.now() &&
-          !pending.has(message.id),
-      );
-      due.forEach((message) => {
-        pending.add(message.id);
-        void completeMessageIfDue(message.id, ownerId)
-          .then(() => reportedErrors.delete(message.id))
-          .catch(() => {
-            if (active && !reportedErrors.has(message.id)) {
-              reportedErrors.add(message.id);
-              notify('Não foi possível atualizar uma mensagem agendada.', 'error');
-            }
-          })
-          .finally(() => pending.delete(message.id));
-      });
+    async function processDueMessages() {
+      if (!active || checking) return;
+      checking = true;
+      try {
+        const dueSnapshot = await getDocs(
+          query(
+            collection(db!, 'messages'),
+            where('ownerId', '==', ownerId),
+            where('status', '==', 'scheduled'),
+            where('scheduledAt', '<=', Timestamp.now()),
+            orderBy('scheduledAt', 'asc'),
+            limit(BATCH_SIZE),
+          ),
+        );
+        await Promise.all(
+          dueSnapshot.docs.map((document) =>
+            completeMessageIfDue(document.id, ownerId).catch(() => {
+              if (active)
+                notify('Não foi possível atualizar uma mensagem agendada.', 'error');
+            }),
+          ),
+        );
+      } catch {
+        if (active)
+          notify('Não foi possível acompanhar as mensagens agendadas.', 'error');
+      } finally {
+        checking = false;
+      }
     }
 
-    const unsubscribe = onSnapshot(
-      query(
-        collection(db, 'messages'),
-        where('ownerId', '==', ownerId),
-        where('status', '==', 'scheduled'),
-      ),
-      (snapshot) => {
-        messages = snapshot.docs.map(
-          (doc) => ({ ...doc.data(), id: doc.id }) as Message,
-        );
-        processDueMessages();
-      },
-      () => notify('Não foi possível acompanhar as mensagens agendadas.', 'error'),
+    void processDueMessages();
+    const interval = window.setInterval(
+      () => void processDueMessages(),
+      CHECK_INTERVAL_MS,
     );
-
-    // Checks the cached snapshot; the timer does not poll Firestore.
-    const interval = window.setInterval(processDueMessages, 1000);
     window.addEventListener('focus', processDueMessages);
     document.addEventListener('visibilitychange', processDueMessages);
 
     return () => {
       active = false;
-      unsubscribe();
       window.clearInterval(interval);
       window.removeEventListener('focus', processDueMessages);
       document.removeEventListener('visibilitychange', processDueMessages);
