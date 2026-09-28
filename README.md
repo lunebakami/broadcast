@@ -28,7 +28,7 @@ npm run emulators
 npm run dev:emulator -w web
 ```
 
-Abra `http://localhost:5173` e crie uma conta fictícia na tela de cadastro. Dados ficam no Firestore Emulator e são apagados quando ele encerra, a menos que sejam exportados. O painel dos emuladores fica em `http://localhost:4000`. O projeto `demo-broadcast` impede o uso acidental de recursos reais.
+Abra `http://localhost:5173`, clique em **Continuar com Google** e use uma identidade fictícia no fluxo do Auth Emulator. Dados ficam no Firestore Emulator e são apagados quando ele encerra, a menos que sejam exportados. O painel dos emuladores fica em `http://localhost:4000`. O projeto `demo-broadcast` impede o uso acidental de recursos reais.
 
 As flags nesse arquivo habilitam os emuladores e fazem as operações passarem pela callable Function local. Os task queues e funções agendadas também são emulados sem Cloud Tasks na nuvem. O ambiente local testa a lógica das Functions, mas não reproduz integralmente retries e permissões IAM da produção. O modo gratuito na nuvem é outro caminho: copie `.env.example` para `.env.local` e mantenha `VITE_ENABLE_FUNCTIONS=false`. Nesse modo, o cliente usa regras para gravar no Firestore e atualiza mensagens vencidas quando o app estiver aberto ou voltar a ser aberto.
 
@@ -118,7 +118,8 @@ As variáveis `VITE_*` são incorporadas ao build. Sempre refaça o build depois
 - Envio fake imediato e agendamento para até 30 dias no futuro, usando o fuso local do dispositivo na entrada e timestamps absolutos no armazenamento.
 - Flag `VITE_ENABLE_FUNCTIONS`: Functions remotas (`true`) ou operação direta do cliente com regras (`false`). O padrão é `false`.
 - Flag `VITE_USE_FIREBASE_EMULATORS`: conecta Auth, Firestore e Functions ao Emulator Suite local.
-- Consulta, edição e exclusão de mensagens; filtros por status, contato e texto.
+- Consulta, edição e exclusão de mensagens; filtros de status e contato no Firestore, e busca por texto/nome na página carregada.
+- Paginação por cursor, com até 10 mensagens por página, na ordem de criação decrescente retornada pelo Firestore.
 - Menu de três pontos por contato com “Apagar todas as mensagens”.
 - Exclusão do contato apaga suas mensagens enviadas e agendadas, com confirmação.
 - Exclusão da conexão é bloqueada enquanto houver mensagens. Sem mensagens, exclui a conexão e seus contatos.
@@ -131,11 +132,17 @@ web/src/
   components/   Componentes compartilhados e diálogos
   features/     Autenticação, conexões, contatos e mensagens
   hooks/        Sessão e consultas em tempo real
-  lib/          Firebase, tipos e mensagens de erro
+  lib/
+    firebase.ts       Inicialização dos SDKs e flags de ambiente
+    mutations/        Uma operação de gravação por arquivo e roteamento por modo
+    messageQueries.ts Consultas, contagem e assinatura da página de mensagens
+    types.ts          Tipos dos documentos
+    errors.ts         Mensagens de erro
 functions/src/
   firebase.ts   Inicialização do Admin SDK e região
   validation.ts Validação dos dados de entrada
-  mutations.ts  Operações autenticadas e transações
+  mutations.ts  Autenticação, validação da ação e despacho
+  mutations/    Uma operação de gravação por arquivo e helpers de transação
   scheduling.ts Gatilho de enfileiramento e processamento
   index.ts      Exportações para o Firebase
 scripts/        Configuração das permissões da fila
@@ -156,9 +163,19 @@ Existem apenas três coleções na raiz do Firestore, **sem subcoleções**:
 
 `ownerId` identifica quem criou cada documento. No modo com Functions, ele sempre vem do token verificado pelo Firebase, nunca do formulário. No modo gratuito do cliente, as regras verificam `ownerId`, os campos e os vínculos entre os registros antes de permitir a gravação. Todas as consultas do frontend incluem o usuário autenticado.
 
-Transações mantêm as operações relacionadas consistentes. A criação de mensagens e contatos também atualiza os registros relacionados, evitando que exclusões simultâneas deixem novos registros órfãos.
+A criação e edição de mensagens e contatos usam transações e atualizam os registros relacionados. No modo gratuito, cada destinatário é processado em uma transação própria; uma falha no meio de um envio para vários contatos pode deixar parte das mensagens criada. No modo Functions, a criação para os destinatários selecionados acontece em uma única transação.
 
-Cada destinatário tem sua própria mensagem. Editar ou excluir um registro não afeta os demais destinatários. Nome e telefone ficam registrados no momento da criação; editar o contato não reescreve o histórico.
+Cada destinatário tem sua própria mensagem. Editar ou excluir um registro não afeta os demais destinatários. Nome e telefone ficam registrados no momento da criação; a tela resolve o nome atual pelo `contactId` usando a lista de contatos em tempo real, sem reescrever as mensagens quando um contato é renomeado. O telefone exibido permanece o registrado no envio.
+
+## Listagem, paginação e contadores
+
+A página de mensagens usa `onSnapshot` com `limit(10)` e cursores `startAfter`. O Firestore ordena por `createdAt` decrescente; o frontend preserva essa ordem. Status e contato são filtrados antes da paginação. A busca textual atua somente nos dez registros carregados, usando o nome atual do contato.
+
+Quando a página retorna exatamente 10 documentos, uma consulta agregada obtém o total do mesmo filtro para calcular se existe próxima página. Quando retorna menos de 10, o total é inferido pela posição da página e pela quantidade recebida, sem consulta agregada. O listener refaz essa decisão quando a página muda em tempo real; a paginação não usa intervalo de polling. O listener anterior é cancelado ao trocar de página ou de filtro.
+
+Os cartões **Enviadas** e **Agendadas** têm um fluxo separado: usam consultas agregadas ao abrir a conexão e a cada 15 segundos. Portanto, os totais do cabeçalho podem demorar até o próximo ciclo para refletir alterações. As contagens retornam números sem baixar o histórico completo de mensagens.
+
+Conexões e contatos continuam sendo carregados integralmente por listeners. No modo gratuito, excluir um contato ou limpar suas mensagens aceita até 450 mensagens por operação; excluir uma conexão sem mensagens aceita até 499 contatos. Essas exclusões usam lotes, enquanto o modo Functions usa transações. O projeto não implementa exclusões em massa para grandes volumes.
 
 ## Agendamento no modo Functions
 
@@ -169,11 +186,13 @@ Cada destinatário tem sua própria mensagem. Editar ou excluir um registro não
 
 A edição gera uma nova revisão. Tarefas antigas ficam inofensivas e terminam sem alteração; mensagens excluídas também são ignoradas. A tarefa não envia SMS, WhatsApp ou qualquer comunicação real. Uma mensagem já enviada pode ter seu texto editado sem novo envio ou alteração do horário original.
 
-O gatilho de enfileiramento permite retries e usa IDs determinísticos para evitar tarefas duplicadas. A entrega também é idempotente. O serviço pode executar após o horário solicitado; não há garantia de precisão no segundo exato. Para o teste prático, as listas são carregadas integralmente e as exclusões relacionadas usam uma transação, sem paginação ou processamento de grandes volumes.
+O gatilho de enfileiramento permite retries e usa IDs determinísticos para evitar tarefas duplicadas. A entrega também é idempotente. O serviço pode executar após o horário solicitado; não há garantia de precisão no segundo exato.
 
 ## Agendamento no modo gratuito
 
-O frontend escuta mensagens pelo Firestore em tempo real. Quando uma mensagem agendada vence, uma transação muda seu status para enviado. A regra do Firestore só permite essa transição depois do horário previsto. Se o navegador estiver fechado, a mensagem continua como agendada até que o usuário reabra o app; nesse momento ela é atualizada. Nenhum processo roda em segundo plano no horário exato neste modo.
+O frontend consulta os agendamentos vencidos a cada 10 segundos, em lotes de até 10 mensagens por usuário. Também verifica ao abrir o app, ao receber foco e ao mudar a visibilidade da página. Uma transação confirma que a mensagem ainda está agendada e que o horário venceu antes de marcar o envio simulado. As regras também permitem que o proprietário antecipe explicitamente o envio ao editar a mensagem.
+
+Se o navegador estiver fechado, a mensagem permanece agendada até o próximo acesso. Havendo mais de 10 mensagens vencidas, elas são processadas nos próximos ciclos. A atualização não tem garantia de precisão no segundo exato; não há serviço executando esse fluxo com o navegador fechado.
 
 Referências: [Firebase Task Queue Functions](https://firebase.google.com/docs/functions/task-functions), [limites do Cloud Tasks](https://docs.cloud.google.com/tasks/docs/quotas) e [integração MUI/Tailwind](https://mui.com/material-ui/integrations/tailwindcss/tailwindcss-v4/).
 
@@ -192,15 +211,12 @@ Após configurar e publicar o Firebase, confira o fluxo real:
 1. Cadastre dois usuários. Crie uma conexão e contatos com o primeiro; o segundo não deve visualizar nem alterar esses registros.
 2. Abra duas abas da mesma conta e confira a atualização em tempo real de conexões, contatos e mensagens.
 3. Envie uma mensagem imediata para dois contatos e confira os dois registros como enviados.
-4. No modo gratuito sem Functions, agende uma mensagem para alguns minutos depois e deixe o app aberto para conferir o status depois do horário. Ao voltar a abrir o app, mensagens vencidas também são atualizadas.
-5. Edite um agendamento antes do disparo; o horário antigo não deve processar a mensagem.
-6. Exclua uma mensagem agendada e confirme que ela não reaparece após o horário.
-7. Apague as mensagens de um contato e confirme que as do outro permanecem.
-8. Confira o bloqueio ao excluir conexão com mensagens e a exclusão em cascata ao remover um contato.
-9. Confira login com Google, edição e exclusão de cada entidade.
+4. Crie mais de 10 mensagens, navegue entre páginas e confira a ordem de criação, os filtros e o limite de 10 registros por página.
+5. No modo gratuito sem Functions, agende uma mensagem para alguns minutos depois e deixe o app aberto para conferir o status depois do horário. Ao voltar a abrir o app, mensagens vencidas também são atualizadas.
+6. Edite um agendamento antes do disparo; o horário antigo não deve processar a mensagem.
+7. Exclua uma mensagem agendada e confirme que ela não reaparece após o horário.
+8. Apague as mensagens de um contato e confirme que as do outro permanecem.
+9. Confira o bloqueio ao excluir conexão com mensagens e a exclusão em cascata ao remover um contato.
+10. Confira login com Google, edição e exclusão de cada entidade.
 
 A compilação local não substitui essa validação com Auth, regras, IAM e Cloud Tasks publicados.
-
-Verificações locais realizadas: build do frontend e das funções, formatação com Prettier, sintaxe do script de IAM e oito verificações de validação de entrada (telefone, texto e limites de agendamento). A inspeção visual não foi realizada porque nenhum navegador estava disponível nesta sessão.
-
-A auditoria de dependências ainda aponta cinco ocorrências moderadas transitivas, incluindo duas na árvore de produção, em `uuid`/`gaxios` e no tooling do Firebase. As versões diretas foram atualizadas; não foram aplicados overrides incompatíveis nem downgrade forçado da CLI.

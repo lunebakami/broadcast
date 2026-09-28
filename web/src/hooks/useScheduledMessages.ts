@@ -8,7 +8,8 @@ import {
   Timestamp,
   where,
 } from 'firebase/firestore';
-import { completeMessageIfDue, db, functionsEnabled } from '../lib/firebase';
+import { db, functionsEnabled } from '../lib/firebase';
+import { completeMessageIfDue } from '../lib/mutations/completeMessageIfDue';
 import type { Notify } from '../lib/types';
 
 const CHECK_INTERVAL_MS = 10000;

@@ -23,7 +23,7 @@ import { Contacts } from './Contacts';
 import { Messages } from './Messages';
 import { ConnectionDialog } from '../components/ConnectionDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 
 export function Workspace({
   connection,

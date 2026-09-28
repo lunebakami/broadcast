@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import { Add, MoreVert, Search } from '@mui/icons-material';
 import type { Contact, Notify } from '../lib/types';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 import { ContactDialog } from '../components/ContactDialog';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';

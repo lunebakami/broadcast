@@ -12,7 +12,7 @@ import {
   ToggleButtonGroup,
 } from '@mui/material';
 import { Add, MoreVert, Schedule, DoneAll } from '@mui/icons-material';
-import { mutate } from '../lib/firebase';
+import { mutate } from '../lib/mutations';
 import { useMessagePage } from '../hooks/useMessagePage';
 import type { Contact, Message, Notify } from '../lib/types';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
@@ -63,16 +63,12 @@ export function Messages({
     ...message,
     recipientName: contactNames.get(message.contactId) ?? message.recipientName,
   }));
-  const filtered = currentMessages
-    .filter(
-      (m) =>
-        (status === 'all' || m.status === status) &&
-        (contactId === 'all' || m.contactId === contactId) &&
-        `${m.text} ${m.recipientName}`.toLowerCase().includes(search.toLowerCase()),
-    )
-    .sort(
-      (a, b) => (happenedAt(b)?.toMillis() ?? 0) - (happenedAt(a)?.toMillis() ?? 0),
-    );
+  const filtered = currentMessages.filter(
+    (m) =>
+      (status === 'all' || m.status === status) &&
+      (contactId === 'all' || m.contactId === contactId) &&
+      `${m.text} ${m.recipientName}`.toLowerCase().includes(search.toLowerCase()),
+  );
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
