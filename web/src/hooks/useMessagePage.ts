@@ -6,7 +6,6 @@ import {
   type MessagePage,
 } from '../lib/messageQueries';
 import { errorText } from '../lib/errors';
-import { useMessageTotal } from './useMessageTotal';
 
 export function useMessagePage(
   ownerId: string,
@@ -19,13 +18,16 @@ export function useMessagePage(
     [ownerId, connectionId, status, contactId],
   );
   const [cursors, setCursors] = useState<MessageCursor[]>([null]);
-  const [result, setResult] = useState<MessagePage>({ items: [], nextCursor: null });
+  const [result, setResult] = useState<MessagePage>({
+    items: [],
+    nextCursor: null,
+    totalCount: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const totals = useMessageTotal(filters);
   const page = cursors.length;
   const cursor = cursors[page - 1];
-  const pageCount = Math.ceil(totals.totalCount / MESSAGE_PAGE_SIZE);
+  const pageCount = Math.ceil(result.totalCount / MESSAGE_PAGE_SIZE);
   const hasNextPage = page < pageCount && result.nextCursor !== null;
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export function useMessagePage(
     return subscribeMessagePage(
       filters,
       cursor,
+      page,
       (nextResult) => {
         setResult(nextResult);
         setLoading(false);
@@ -43,7 +46,7 @@ export function useMessagePage(
         setLoading(false);
       },
     );
-  }, [filters, cursor]);
+  }, [filters, cursor, page]);
 
   function nextPage() {
     if (!loading && hasNextPage)
@@ -56,9 +59,9 @@ export function useMessagePage(
 
   return {
     messages: result.items,
-    totalCount: totals.totalCount,
+    totalCount: result.totalCount,
     loading,
-    error: error || totals.error,
+    error,
     page,
     pageCount,
     hasPreviousPage: page > 1,
