@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Button,
@@ -12,26 +12,12 @@ import {
   ToggleButtonGroup,
 } from '@mui/material';
 import { Add, MoreVert, Schedule, DoneAll } from '@mui/icons-material';
-import {
-  collection,
-  DocumentData,
-  getCountFromServer,
-  limit,
-  onSnapshot,
-  orderBy,
-  QueryDocumentSnapshot,
-  query,
-  startAfter,
-  where,
-} from 'firebase/firestore';
-import { db, mutate } from '../lib/firebase';
-import { errorText } from '../lib/errors';
+import { mutate } from '../lib/firebase';
+import { useMessagePage } from '../hooks/useMessagePage';
 import type { Contact, Message, Notify } from '../lib/types';
 import { ConfirmDialog, type Confirmation } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';
 import { MessageDialog } from './MessageDialog';
-
-const PAGE_SIZE = 10;
 
 function happenedAt(message: Message) {
   const { status, scheduledAt, sentAt, createdAt } = message;
@@ -52,14 +38,19 @@ export function Messages({
   const [status, setStatus] = useState('all');
   const [contactId, setContactId] = useState('all');
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<
-    Array<QueryDocumentSnapshot<DocumentData> | null>
-  >([null]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const {
+    messages,
+    totalCount,
+    loading,
+    error,
+    page,
+    pageCount,
+    hasPreviousPage,
+    hasNextPage,
+    previousPage,
+    nextPage,
+    resetPage,
+  } = useMessagePage(ownerId, connectionId, status, contactId);
   // null = closed, undefined = creating.
   const [edit, setEdit] = useState<Message | null | undefined>(null);
   const [menu, setMenu] = useState<{
@@ -67,69 +58,6 @@ export function Messages({
     message: Message;
   } | null>(null);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
-  const cursor = cursors[page - 1];
-  useEffect(() => {
-    if (!db) return;
-    setLoading(true);
-    setError('');
-    const constraints = [
-      where('ownerId', '==', ownerId),
-      where('connectionId', '==', connectionId),
-    ];
-    if (status !== 'all') constraints.push(where('status', '==', status));
-    if (contactId !== 'all') constraints.push(where('contactId', '==', contactId));
-    const messagesQuery = query(
-      collection(db, 'messages'),
-      ...constraints,
-      orderBy('createdAt', 'desc'),
-      ...(cursor ? [startAfter(cursor)] : []),
-      limit(PAGE_SIZE),
-    );
-    const countQuery = query(collection(db, 'messages'), ...constraints);
-    let active = true;
-    const unsubscribe = onSnapshot(
-      messagesQuery,
-      (snapshot) => {
-        if (!active) return;
-        setMessages(
-          snapshot.docs.map(
-            (document) => ({ ...document.data(), id: document.id }) as Message,
-          ),
-        );
-        setLoading(false);
-        if (snapshot.size === PAGE_SIZE) {
-          setCursors((current) => {
-            const lastDocument = snapshot.docs[snapshot.docs.length - 1];
-            if (current[page]?.ref.path === lastDocument.ref.path) return current;
-            const next = [...current];
-            next[page] = lastDocument;
-            return next;
-          });
-        }
-      },
-      (reason) => {
-        if (!active) return;
-        setError(errorText(reason));
-        setLoading(false);
-      },
-    );
-    async function refreshCount() {
-      try {
-        const snapshot = await getCountFromServer(countQuery);
-        if (active) setTotalCount(snapshot.data().count);
-      } catch (reason) {
-        if (active) setError(errorText(reason));
-      }
-    }
-    void refreshCount();
-    const countInterval = window.setInterval(() => void refreshCount(), 15000);
-    return () => {
-      active = false;
-      unsubscribe();
-      window.clearInterval(countInterval);
-    };
-  }, [ownerId, connectionId, status, contactId, page, cursor]);
-
   const contactNames = new Map(contacts.map((contact) => [contact.id, contact.name]));
   const currentMessages = messages.map((message) => ({
     ...message,
@@ -145,9 +73,6 @@ export function Messages({
     .sort(
       (a, b) => (happenedAt(b)?.toMillis() ?? 0) - (happenedAt(a)?.toMillis() ?? 0),
     );
-  const pageCount = Math.ceil(totalCount / PAGE_SIZE);
-  const hasPreviousPage = page > 1;
-  const hasNextPage = page < pageCount;
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -158,8 +83,7 @@ export function Messages({
           onChange={(_, value: string | null) => {
             if (value) {
               setStatus(value);
-              setPage(1);
-              setCursors([null]);
+              resetPage();
             }
           }}
           aria-label="Status das mensagens"
@@ -184,7 +108,6 @@ export function Messages({
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
-            setPage(1);
           }}
         />
         <TextField
@@ -194,8 +117,7 @@ export function Messages({
           value={contactId}
           onChange={(e) => {
             setContactId(e.target.value);
-            setPage(1);
-            setCursors([null]);
+            resetPage();
           }}
           className="min-w-48"
         >
@@ -279,19 +201,13 @@ export function Messages({
       {pageCount > 0 && (
         <div className="mt-6 flex flex-col items-center gap-2">
           <div className="flex items-center gap-3">
-            <Button
-              disabled={!hasPreviousPage || loading}
-              onClick={() => setPage((current) => current - 1)}
-            >
+            <Button disabled={!hasPreviousPage || loading} onClick={previousPage}>
               Anterior
             </Button>
             <span className="text-sm text-slate-500">
               Página {page} de {pageCount}
             </span>
-            <Button
-              disabled={!hasNextPage || loading || !cursors[page]}
-              onClick={() => setPage((current) => current + 1)}
-            >
+            <Button disabled={!hasNextPage || loading} onClick={nextPage}>
               Próxima
             </Button>
           </div>
